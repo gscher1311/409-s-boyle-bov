@@ -4,7 +4,8 @@ Build script for 409 S Boyle Ave BOV - Los Angeles, CA 90033
 Based on Stocker Gardens template (build_bov_v2.py).
 32-unit RSO studio asset in Boyle Heights.
 """
-import base64, json, os, sys, time, urllib.request, urllib.parse, io, statistics
+import base64, json, math, os, sys, time, urllib.request, urllib.parse, io, statistics
+from PIL import Image, ImageDraw, ImageFont
 
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -127,9 +128,13 @@ NON_TAX_NON_MGMT_EXP = (
 )
 
 # Financing constants
-INTEREST_RATE = 0.065
+# Interest rate: 5yr Treasury (3.61% as of 2/13/2026) + 200bps conventional spread = 5.61%
+# Rounded down to 5.60% per broker-optimistic convention
+# Source: Interest Rate Assumption Engine (LAAA-AI-Prompts/underwriting/interest_rate_engine.md)
+INTEREST_RATE = 0.0560
 AMORTIZATION_YEARS = 30
-LTV = 0.55
+MAX_LTV = 0.55
+MIN_DCR = 1.25
 
 # Derived EGI and management
 CUR_EGI = GSR * (1 - VACANCY_PCT) + OTHER_INCOME
@@ -172,8 +177,12 @@ def calc_metrics(price):
     pf_exp = NON_TAX_NON_MGMT_EXP + pf_mgmt + taxes
     cur_noi = cur_egi - cur_exp
     pf_noi = pf_egi - pf_exp
-    loan_amount = price * LTV
-    down_payment = price * (1 - LTV)
+    ltv_max_loan = price * MAX_LTV
+    dcr_max_loan = cur_noi / (MIN_DCR * LOAN_CONSTANT) if LOAN_CONSTANT > 0 else ltv_max_loan
+    loan_amount = min(ltv_max_loan, dcr_max_loan)
+    actual_ltv = loan_amount / price if price > 0 else 0
+    loan_constraint = "LTV" if ltv_max_loan <= dcr_max_loan else "DCR"
+    down_payment = price - loan_amount
     debt_service = loan_amount * LOAN_CONSTANT
     net_cf_cur = cur_noi - debt_service
     net_cf_pf = pf_noi - debt_service
@@ -195,6 +204,7 @@ def calc_metrics(price):
         "cur_cap": cur_noi / price * 100, "pf_cap": pf_noi / price * 100,
         "grm": price / GSR, "pf_grm": price / PF_GSR,
         "loan_amount": loan_amount, "down_payment": down_payment,
+        "actual_ltv": actual_ltv, "loan_constraint": loan_constraint,
         "debt_service": debt_service, "net_cf_cur": net_cf_cur, "net_cf_pf": net_cf_pf,
         "coc_cur": coc_cur, "coc_pf": coc_pf, "dcr_cur": dcr_cur, "dcr_pf": dcr_pf,
         "prin_red": prin_red, "total_return_cur": total_return_cur, "total_return_pf": total_return_pf,
@@ -326,6 +336,97 @@ def fp(n):
     if n is None: return "n/a"
     return f"{n:.2f}%"
 
+def generate_static_map(center_lat, center_lng, markers, comp_color, zoom=14, width=800, height=400):
+    """Generate a static map image from OSM tiles with numbered markers.
+    Returns a base64-encoded PNG string suitable for embedding in HTML."""
+    def lat_lng_to_tile(lat, lng, z):
+        lat_rad = math.radians(lat)
+        n = 2 ** z
+        x = (lng + 180.0) / 360.0 * n
+        y = (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n
+        return x, y
+
+    def tile_to_lat_lng(tx, ty, z):
+        n = 2 ** z
+        lng = tx / n * 360.0 - 180.0
+        lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ty / n)))
+        lat = math.degrees(lat_rad)
+        return lat, lng
+
+    cx, cy = lat_lng_to_tile(center_lat, center_lng, zoom)
+    tiles_x = math.ceil(width / 256) + 1
+    tiles_y = math.ceil(height / 256) + 1
+    tile_x_start = int(cx - tiles_x / 2)
+    tile_y_start = int(cy - tiles_y / 2)
+
+    canvas_w = (tiles_x + 1) * 256
+    canvas_h = (tiles_y + 1) * 256
+    canvas = Image.new("RGB", (canvas_w, canvas_h), (240, 240, 240))
+
+    for tx in range(tile_x_start, tile_x_start + tiles_x + 1):
+        for ty in range(tile_y_start, tile_y_start + tiles_y + 1):
+            url = f"https://tile.openstreetmap.org/{zoom}/{tx}/{ty}.png"
+            req = urllib.request.Request(url, headers={"User-Agent": "LAAA-BOV-Builder/1.0"})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    tile_data = resp.read()
+                tile_img = Image.open(io.BytesIO(tile_data))
+                px = (tx - tile_x_start) * 256
+                py = (ty - tile_y_start) * 256
+                canvas.paste(tile_img, (px, py))
+            except Exception:
+                pass
+
+    offset_x = int((cx - tile_x_start) * 256 - width / 2)
+    offset_y = int((cy - tile_y_start) * 256 - height / 2)
+    cropped = canvas.crop((offset_x, offset_y, offset_x + width, offset_y + height))
+    draw = ImageDraw.Draw(cropped)
+
+    def draw_marker(draw, px, py, label, color, size=26):
+        r = size // 2
+        draw.ellipse([px - r - 2, py - r - 2, px + r + 2, py + r + 2], fill="white")
+        draw.ellipse([px - r, py - r, px + r, py + r], fill=color)
+        try:
+            font = ImageFont.truetype("arial.ttf", 12)
+        except (IOError, OSError):
+            font = ImageFont.load_default()
+        bbox = draw.textbbox((0, 0), str(label), font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.text((px - tw / 2, py - th / 2 - 1), str(label), fill="white", font=font)
+
+    subj_x = int(width / 2)
+    subj_y = int(height / 2)
+    draw_marker(draw, subj_x, subj_y, "\u2605", "#C5A258", 32)
+
+    for m in markers:
+        lat, lng = m.get("lat"), m.get("lng")
+        if lat is None or lng is None:
+            continue
+        mx, my = lat_lng_to_tile(lat, lng, zoom)
+        px = int((mx - cx) * 256 + width / 2)
+        py = int((my - cy) * 256 + height / 2)
+        if 0 <= px <= width and 0 <= py <= height:
+            draw_marker(draw, px, py, m.get("label", ""), comp_color)
+
+    buf = io.BytesIO()
+    cropped.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def build_static_map_markers(comps, addresses):
+    """Build marker list with lat/lng from comp list and address cache."""
+    markers = []
+    for c in comps:
+        lat, lng = None, None
+        for a, coords in addresses.items():
+            if c["addr"].lower() in a.lower() and coords:
+                lat, lng = coords
+                break
+        if lat is not None:
+            markers.append({"lat": lat, "lng": lng, "label": str(c.get("num", ""))})
+    return markers
+
+
 def build_map_js(map_id, comps, comp_color, subject_lat, subject_lng):
     js = f"var {map_id} = L.map('{map_id}').setView([{subject_lat}, {subject_lng}], 14);\n"
     js += f"L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{attribution: '&copy; OpenStreetMap'}}).addTo({map_id});\n"
@@ -346,6 +447,16 @@ sale_map_js = build_map_js("saleMap", SALE_COMPS, "#1B3A5C", SUBJECT_LAT, SUBJEC
 active_map_js = build_map_js("activeMap", ON_MARKET_COMPS, "#2E7D32", SUBJECT_LAT, SUBJECT_LNG)
 rent_comps_for_map = [{"addr": c["addr"], "num": c["num"], "price": 0, "units": c["units"]} for c in RENT_COMPS]
 rent_map_js = build_map_js("rentMap", rent_comps_for_map, "#1B3A5C", SUBJECT_LAT, SUBJECT_LNG)
+
+# Generate static map images for PDF
+print("Generating static maps for PDF...")
+sale_markers = build_static_map_markers(SALE_COMPS, ADDRESSES)
+sale_static_map = generate_static_map(SUBJECT_LAT, SUBJECT_LNG, sale_markers, "#1B3A5C")
+active_markers = build_static_map_markers(ON_MARKET_COMPS, ADDRESSES)
+active_static_map = generate_static_map(SUBJECT_LAT, SUBJECT_LNG, active_markers, "#2E7D32")
+rent_markers = build_static_map_markers(rent_comps_for_map, ADDRESSES)
+rent_static_map = generate_static_map(SUBJECT_LAT, SUBJECT_LNG, rent_markers, "#1B3A5C")
+print("  Static maps generated.")
 
 # ============================================================
 # GENERATE DYNAMIC TABLE HTML
@@ -429,17 +540,18 @@ op_income_html = ""
 for label, val, _, note_num in income_lines:
     v_str = f"${val:,.0f}" if val >= 0 else f"(${abs(val):,.0f})"
     pu = f"${val/UNITS:,.0f}" if val >= 0 else f"(${abs(val)/UNITS:,.0f})"
+    psf = f"${val/SF:.2f}" if val >= 0 else f"(${abs(val)/SF:.2f})"
     note_ref = f'<span class="note-ref">[{note_num}]</span>' if note_num else ""
-    op_income_html += f"<tr><td>{label} {note_ref}</td><td class='num'>{v_str}</td><td class='num'>{pu}</td><td class='num'> - </td></tr>\n"
-op_income_html += f'<tr class="summary"><td><strong>Effective Gross Income</strong></td><td class="num"><strong>${CUR_EGI:,.0f}</strong></td><td class="num"><strong>${CUR_EGI/UNITS:,.0f}</strong></td><td class="num"><strong>100.0%</strong></td></tr>'
+    op_income_html += f"<tr><td>{label} {note_ref}</td><td class='num'>{v_str}</td><td class='num'>{pu}</td><td class='num'>{psf}</td><td class='num'> - </td></tr>\n"
+op_income_html += f'<tr class="summary"><td><strong>Effective Gross Income</strong></td><td class="num"><strong>${CUR_EGI:,.0f}</strong></td><td class="num"><strong>${CUR_EGI/UNITS:,.0f}</strong></td><td class="num"><strong>${CUR_EGI/SF:.2f}</strong></td><td class="num"><strong>100.0%</strong></td></tr>'
 
 op_expense_html = ""
 for label, val, note_num in expense_lines:
     pct = f"{val/CUR_EGI*100:.1f}%"
     note_ref = f'<span class="note-ref">[{note_num}]</span>' if note_num else ""
-    op_expense_html += f"<tr><td>{label} {note_ref}</td><td class='num'>${val:,.0f}</td><td class='num'>${val/UNITS:,.0f}</td><td class='num'>{pct}</td></tr>\n"
-op_expense_html += f'<tr class="summary"><td><strong>Total Expenses</strong></td><td class="num"><strong>${CUR_TOTAL_EXP:,.0f}</strong></td><td class="num"><strong>${CUR_TOTAL_EXP/UNITS:,.0f}</strong></td><td class="num"><strong>{CUR_TOTAL_EXP/CUR_EGI*100:.1f}%</strong></td></tr>'
-op_expense_html += f'\n<tr class="summary"><td><strong>Net Operating Income</strong></td><td class="num"><strong>${CUR_NOI_AT_LIST:,.0f}</strong></td><td class="num"><strong>${CUR_NOI_AT_LIST/UNITS:,.0f}</strong></td><td class="num"><strong>{CUR_NOI_AT_LIST/CUR_EGI*100:.1f}%</strong></td></tr>'
+    op_expense_html += f"<tr><td>{label} {note_ref}</td><td class='num'>${val:,.0f}</td><td class='num'>${val/UNITS:,.0f}</td><td class='num'>${val/SF:.2f}</td><td class='num'>{pct}</td></tr>\n"
+op_expense_html += f'<tr class="summary"><td><strong>Total Expenses</strong></td><td class="num"><strong>${CUR_TOTAL_EXP:,.0f}</strong></td><td class="num"><strong>${CUR_TOTAL_EXP/UNITS:,.0f}</strong></td><td class="num"><strong>${CUR_TOTAL_EXP/SF:.2f}</strong></td><td class="num"><strong>{CUR_TOTAL_EXP/CUR_EGI*100:.1f}%</strong></td></tr>'
+op_expense_html += f'\n<tr class="summary"><td><strong>Net Operating Income</strong></td><td class="num"><strong>${CUR_NOI_AT_LIST:,.0f}</strong></td><td class="num"><strong>${CUR_NOI_AT_LIST/UNITS:,.0f}</strong></td><td class="num"><strong>${CUR_NOI_AT_LIST/SF:.2f}</strong></td><td class="num"><strong>{CUR_NOI_AT_LIST/CUR_EGI*100:.1f}%</strong></td></tr>'
 
 # Unit summary for summary page
 studios = [(u, s, c, m) for u, t, s, c, m in RENT_ROLL if t == "Studio"]
@@ -523,11 +635,11 @@ p{{margin-bottom:16px;font-size:14px;line-height:1.7;}}
 .mkt-quote{{background:#FFF8E7;border-left:4px solid #C5A258;padding:16px 24px;margin:20px 0;border-radius:0 4px 4px 0;font-size:15px;font-style:italic;line-height:1.6;color:#1B3A5C;}}.mkt-channels{{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;}}.mkt-channel{{background:#f0f4f8;border-radius:8px;padding:16px 20px;}}.mkt-channel h4{{color:#1B3A5C;font-size:14px;margin-bottom:8px;}}.mkt-channel ul{{margin:0;padding-left:18px;}}.mkt-channel li{{font-size:13px;line-height:1.5;margin-bottom:4px;}}
 .perf-grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;}}.perf-card{{background:#f0f4f8;border-radius:8px;padding:16px 20px;}}.perf-card h4{{color:#1B3A5C;font-size:14px;margin-bottom:8px;}}.perf-card ul{{margin:0;padding-left:18px;}}.perf-card li{{font-size:13px;line-height:1.5;margin-bottom:4px;}}.platform-strip{{display:flex;justify-content:center;align-items:center;gap:20px;flex-wrap:wrap;margin-top:24px;padding:14px 20px;background:#1B3A5C;border-radius:6px;}}.platform-strip-label{{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#C5A258;font-weight:600;}}.platform-name{{font-size:12px;font-weight:600;color:#fff;letter-spacing:0.5px;}}
 .inv-split{{display:grid;grid-template-columns:50% 50%;gap:24px;}}.inv-left .metrics-grid-4{{grid-template-columns:repeat(2,1fr);}}.inv-text p{{font-size:13px;line-height:1.6;margin-bottom:10px;}}.inv-logo{{display:none;}}.inv-right{{display:flex;flex-direction:column;gap:16px;padding-top:70px;}}.inv-photo{{height:280px;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);}}.inv-photo img{{width:100%;height:100%;object-fit:cover;object-position:center;display:block;}}.inv-highlights{{background:#f0f4f8;border:1px solid #dce3eb;border-radius:8px;padding:16px 20px;flex:1;}}.inv-highlights h4{{color:#1B3A5C;font-size:13px;margin-bottom:8px;}}.inv-highlights ul{{margin:0;padding-left:18px;}}.inv-highlights li{{font-size:12px;line-height:1.5;margin-bottom:5px;}}
-.loc-grid{{display:grid;grid-template-columns:58% 42%;gap:28px;align-items:start;}}.loc-left{{max-height:380px;overflow:hidden;}}.loc-left p{{font-size:13.5px;line-height:1.7;margin-bottom:14px;}}.loc-right{{display:block;max-height:380px;overflow:hidden;}}.loc-wide-map{{width:100%;height:200px;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);margin-top:20px;}}.loc-wide-map img{{width:100%;height:100%;object-fit:cover;object-position:center;display:block;}}
+.loc-grid{{display:grid;grid-template-columns:58% 42%;gap:28px;align-items:start;}}.loc-left{{max-height:480px;overflow:hidden;}}.loc-left p{{font-size:13.5px;line-height:1.7;margin-bottom:14px;}}.loc-right{{display:block;max-height:480px;overflow:hidden;}}.loc-wide-map{{width:100%;height:200px;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);margin-top:20px;}}.loc-wide-map img{{width:100%;height:100%;object-fit:cover;object-position:center;display:block;}}
 .prop-grid-4{{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:20px;}}
 .buyer-split{{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start;}}.buyer-objections .obj-item{{margin-bottom:14px;}}.buyer-objections .obj-q{{font-weight:700;color:#1B3A5C;margin-bottom:4px;font-size:14px;}}.buyer-objections .obj-a{{font-size:13px;color:#444;line-height:1.6;}}.buyer-photo{{width:100%;height:220px;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);margin-top:24px;}}.buyer-photo img{{width:100%;height:100%;object-fit:cover;object-position:center;display:block;}}
 .buyer-profile{{background:#f0f4f8;border-left:4px solid #1B3A5C;padding:20px 24px;margin:24px 0;border-radius:0 4px 4px 0;}}.buyer-profile-label{{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#1B3A5C;margin-bottom:12px;}}.buyer-profile ul{{list-style:none;padding:0;margin:0;}}.buyer-profile li{{padding:8px 0;border-bottom:1px solid #dce3eb;font-size:14px;line-height:1.6;color:#333;}}.buyer-profile li:last-child{{border-bottom:none;}}.buyer-profile li strong{{color:#1B3A5C;}}.buyer-profile .bp-closing{{font-size:13px;color:#555;margin-top:12px;font-style:italic;}}
-.leaflet-map{{height:400px;border-radius:4px;border:1px solid #ddd;margin-bottom:30px;z-index:1;}}.map-fallback{{display:none;font-size:12px;color:#666;font-style:italic;margin-bottom:30px;}}
+.leaflet-map{{height:400px;border-radius:4px;border:1px solid #ddd;margin-bottom:30px;z-index:1;}}.map-fallback{{display:none;font-size:12px;color:#666;font-style:italic;margin-bottom:30px;}}.comp-map-print{{display:none;}}
 .embed-map-wrap{{position:relative;width:100%;margin-bottom:20px;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);}}.embed-map-wrap iframe{{display:block;width:100%;height:420px;border:0;}}
 .os-two-col{{display:grid;grid-template-columns:55% 45%;gap:24px;align-items:stretch;margin-bottom:24px;}}.os-right{{font-size:10.5px;line-height:1.45;color:#555;background:#f8f9fb;border:1px solid #e0e4ea;border-radius:6px;padding:16px 20px;}}.os-right h3{{font-size:13px;margin:0 0 8px;}}.os-right p{{margin-bottom:4px;}}
 .summary-page{{margin-top:24px;border:1px solid #dce3eb;border-radius:8px;padding:20px;background:#fff;}}.summary-banner{{text-align:center;background:#1B3A5C;color:#fff;padding:10px 16px;font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-radius:4px;margin-bottom:16px;}}.summary-two-col{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}}.summary-table{{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;border:1px solid #dce3eb;}}.summary-table th,.summary-table td{{padding:4px 8px;border-bottom:1px solid #e8ecf0;text-align:left;}}.summary-table td.num{{text-align:right;}}.summary-table th.num{{text-align:right;}}.summary-header{{background:#1B3A5C;color:#fff;padding:5px 8px !important;font-size:10px !important;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;border-bottom:none !important;}}.summary-table tr.summary td{{border-top:2px solid #1B3A5C;font-weight:700;background:#f0f4f8;}}.summary-table tr:nth-child(even){{background:#fafbfc;}}.summary-trade-range{{text-align:center;margin:24px auto;padding:16px 24px;border:2px solid #1B3A5C;border-radius:6px;max-width:480px;}}.summary-trade-label{{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#555;font-weight:600;margin-bottom:6px;}}.summary-trade-prices{{font-size:26px;font-weight:700;color:#1B3A5C;}}
@@ -538,7 +650,8 @@ p{{margin-bottom:16px;font-size:14px;line-height:1.7;}}
 @media print{{
 @page{{size:letter landscape;margin:0.4in 0.5in;}}
 .pdf-float-btn,.toc-nav,.leaflet-map,.embed-map-wrap,.page-break-marker{{display:none !important;}}
-.map-fallback{{display:block !important;}}
+.map-fallback{{display:none !important;}}
+.comp-map-print{{display:block !important;height:280px;border-radius:4px;overflow:hidden;margin-bottom:10px;}}.comp-map-print img{{width:100%;height:100%;object-fit:cover;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
 body{{font-size:11px;line-height:1.5;color:#222;}}
 p{{font-size:11px;line-height:1.5;margin-bottom:8px;orphans:3;widows:3;}}
 .section{{padding:20px 20px;max-width:100%;}}.section-title{{font-size:18px;margin-bottom:2px;}}.section-subtitle{{font-size:10px;letter-spacing:1px;margin-bottom:6px;}}.section-divider{{margin-bottom:10px;height:2px;}}.sub-heading{{font-size:13px;margin:10px 0 6px;}}
@@ -955,6 +1068,7 @@ html_parts.append(f"""
 <div class="section-divider"></div>
 <div id="saleMap" class="leaflet-map"></div>
 <p class="map-fallback">Interactive map available at the live URL.</p>
+<div class="comp-map-print"><img src="{sale_static_map}" alt="Sale Comps Map"></div>
 <div class="table-scroll"><table>
 <thead><tr><th>#</th><th>Address</th><th>Units</th><th>Sale Date</th><th>Price</th><th>$/Unit</th><th>$/SF</th><th>Cap</th><th>GRM</th><th>Yr Built</th><th>Notes</th></tr></thead>
 <tbody>
@@ -976,6 +1090,7 @@ html_parts.append(f"""
 <div class="section-divider"></div>
 <div id="activeMap" class="leaflet-map"></div>
 <p class="map-fallback">Interactive map available at the live URL.</p>
+<div class="comp-map-print"><img src="{active_static_map}" alt="On-Market Comps Map"></div>
 <div class="table-scroll"><table>
 <thead><tr><th>#</th><th>Address</th><th>Units</th><th>List Price</th><th>$/Unit</th><th>$/SF</th><th>Cap</th><th>GRM</th><th>DOM</th><th>Notes</th></tr></thead>
 <tbody>
@@ -1001,6 +1116,7 @@ html_parts.append(f"""
 <div class="section-divider"></div>
 <div id="rentMap" class="leaflet-map"></div>
 <p class="map-fallback">Interactive map available at the live URL.</p>
+<div class="comp-map-print"><img src="{rent_static_map}" alt="Rent Comps Map"></div>
 <div class="table-scroll"><table>
 <thead><tr><th>#</th><th>Address</th><th>Dist.</th><th>Rent</th><th>SF</th><th>$/SF</th><th>Yr Built</th><th>Units</th><th>Condition</th><th>Notes</th></tr></thead>
 <tbody>
@@ -1042,11 +1158,11 @@ html_parts.append(f"""
 <div class="os-left">
 <h3 class="sub-heading">Operating Statement</h3>
 <table>
-<thead><tr><th>Income</th><th class="num">Annual</th><th class="num">Per Unit</th><th class="num">% EGI</th></tr></thead>
+<thead><tr><th>Income</th><th class="num">Annual</th><th class="num">Per Unit</th><th class="num">$/SF</th><th class="num">% EGI</th></tr></thead>
 <tbody>{op_income_html}</tbody>
 </table>
 <table>
-<thead><tr><th>Expenses</th><th class="num">Annual</th><th class="num">Per Unit</th><th class="num">% EGI</th></tr></thead>
+<thead><tr><th>Expenses</th><th class="num">Annual</th><th class="num">Per Unit</th><th class="num">$/SF</th><th class="num">% EGI</th></tr></thead>
 <tbody>{op_expense_html}</tbody>
 </table>
 <p style="font-size:10px;color:#888;font-style:italic;margin-top:-12px;">Property taxes reassessed at 1.21% of $3,200,000 purchase price. The pricing matrix recalculates taxes at each price point.</p>
@@ -1078,7 +1194,7 @@ html_parts.append(f"""
 <thead><tr><th colspan="2" class="summary-header">OPERATING DATA</th></tr></thead>
 <tbody>
 <tr><td>Price</td><td class="num">${LIST_PRICE:,}</td></tr>
-<tr><td>Down Payment ({1-LTV:.0%})</td><td class="num">${AT_LIST['down_payment']:,.0f}</td></tr>
+<tr><td>Down Payment ({1-AT_LIST['actual_ltv']:.0%})</td><td class="num">${AT_LIST['down_payment']:,.0f}</td></tr>
 <tr><td>Number of Units</td><td class="num">{UNITS}</td></tr>
 <tr><td>Price Per Unit</td><td class="num">${AT_LIST['per_unit']:,.0f}</td></tr>
 <tr><td>Price Per SqFt</td><td class="num">${AT_LIST['per_sf']:,.2f}</td></tr>
@@ -1103,7 +1219,9 @@ html_parts.append(f"""
 <tr><td>Loan Type</td><td class="num">New</td></tr>
 <tr><td>Interest Rate</td><td class="num">{INTEREST_RATE:.2%}</td></tr>
 <tr><td>Amortization</td><td class="num">{AMORTIZATION_YEARS} Years</td></tr>
-<tr><td>Loan Constant</td><td class="num">{LOAN_CONSTANT:.4f}</td></tr>
+<tr><td>Loan Constant</td><td class="num">{LOAN_CONSTANT:.2%}</td></tr>
+<tr><td>LTV</td><td class="num">{AT_LIST['actual_ltv']:.1%}</td></tr>
+<tr><td>DSCR</td><td class="num">{AT_LIST['dcr_cur']:.2f}x</td></tr>
 </tbody>
 </table>
 <table class="summary-table">
