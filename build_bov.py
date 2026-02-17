@@ -20,7 +20,7 @@ PDF_LINK = PDF_WORKER_URL + "/?url=" + urllib.parse.quote(BOV_BASE_URL + "/", sa
 # ============================================================
 # RAG CHATBOT CONFIG
 # ============================================================
-ENABLE_CHATBOT = True
+ENABLE_CHATBOT = False
 BOV_NAMESPACE = "boyle-409"
 CHAT_WORKER_URL = "https://laaa-chat-worker.laaa-team.workers.dev"
 PROPERTY_DISPLAY_NAME = "409 S Boyle Ave"
@@ -70,31 +70,31 @@ IMG = {
 # ============================================================
 # SUBJECT COORDINATES
 # ============================================================
-SUBJECT_LAT, SUBJECT_LNG = 34.0428203, -118.2197146
+SUBJECT_LAT, SUBJECT_LNG = 34.0428765, -118.2196850
 
 # ============================================================
 # CACHED GEOCODE DATA
 # ============================================================
 ADDRESSES = {
-    "223 N Breed St, Los Angeles, CA 90033": (34.0460641, -118.2098731),
-    "323 N Soto St, Los Angeles, CA 90033": (34.0474173, -118.2075023),
-    "2221 Michigan Ave, Los Angeles, CA 90033": (34.0460739, -118.2109893),
-    "301 S Boyle Ave, Los Angeles, CA 90033": (34.0336223, -118.2195376),
-    "456 S Breed St, Los Angeles, CA 90033": (34.0401991, -118.2135306),
-    "571 Fairview Ave, Los Angeles, CA 90033": (34.0536486, -118.220797),
-    "2649 Marengo St, Los Angeles, CA 90033": (34.0546244, -118.1983646),
-    "2107 E Cesar E Chavez Ave, Los Angeles, CA 90033": (34.0484012, -118.211152),
-    "124 N Westmoreland Ave, Los Angeles, CA 90004": (34.0742511, -118.2878066),
-    "308 S Boyle Ave, Los Angeles, CA 90033": (34.0450572, -118.2196554),
-    "2707 Pomeroy Ave, Los Angeles, CA 90033": (34.0533978, -118.1974075),
-    "207 N Savannah St, Los Angeles, CA 90033": (34.0421566, -118.202959),
-    "2448 Boulder St, Los Angeles, CA 90033": (34.0489532, -118.2051794),
-    "444 S Chicago St, Los Angeles, CA 90033": (34.0409169, -118.2146206),
-    "529 S Lorena St, Los Angeles, CA 90033": (34.031797, -118.198516),
-    "234 N Chicago St, Los Angeles, CA 90033": (34.0467565, -118.2108806),
-    "2019 City View Ave, Los Angeles, CA 90033": (34.0531685, -118.2102449),
-    "1849 Sichel St, Los Angeles, CA 90031": (34.0646549, -118.2129138),
-    "409 S Boyle Ave, Los Angeles, CA 90033": (34.0428203, -118.2197146),
+    "223 N Breed St, Los Angeles, CA 90033": (34.0460199, -118.2098654),
+    "323 N Soto St, Los Angeles, CA 90033": (34.0474295, -118.2074637),
+    "2221 Michigan Ave, Los Angeles, CA 90033": (34.0460730, -118.2110436),
+    "301 S Boyle Ave, Los Angeles, CA 90033": (34.0452789, -118.2198368),
+    "456 S Breed St, Los Angeles, CA 90033": (34.0402349, -118.2135414),
+    "571 Fairview Ave, Los Angeles, CA 90033": (34.0536112, -118.2207576),
+    "2649 Marengo St, Los Angeles, CA 90033": (34.0546013, -118.1983125),
+    "2107 E Cesar E Chavez Ave, Los Angeles, CA 90033": (34.0483934, -118.2112010),
+    "124 N Westmoreland Ave, Los Angeles, CA 90004": (34.0742984, -118.2878258),
+    "308 S Boyle Ave, Los Angeles, CA 90033": (34.0451076, -118.2196875),
+    "2707 Pomeroy Ave, Los Angeles, CA 90033": (34.0533787, -118.1974811),
+    "207 N Savannah St, Los Angeles, CA 90033": (34.0421399, -118.2029369),
+    "2448 Boulder St, Los Angeles, CA 90033": (34.0489778, -118.2051660),
+    "444 S Chicago St, Los Angeles, CA 90033": (34.0409627, -118.2146262),
+    "529 S Lorena St, Los Angeles, CA 90033": (34.0316259, -118.1985886),
+    "234 N Chicago St, Los Angeles, CA 90033": (34.0467524, -118.2109175),
+    "2019 City View Ave, Los Angeles, CA 90033": (34.0531685, -118.2103021),
+    "1849 Sichel St, Los Angeles, CA 90031": (34.0646559, -118.2128832),
+    "409 S Boyle Ave, Los Angeles, CA 90033": (34.0428765, -118.2196850),
 }
 print(f"Using cached geocode data ({len(ADDRESSES)} addresses)")
 
@@ -463,6 +463,15 @@ html_parts.append(f"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta property="og:title" content="Broker Opinion of Value - 409 S Boyle Ave">
+<meta property="og:description" content="32-Unit Multifamily Investment - Los Angeles, CA 90033 | LAAA Team - Marcus & Millichap">
+<meta property="og:image" content="https://409sboyle.laaa.com/preview.png">
+<meta property="og:url" content="https://409sboyle.laaa.com/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Broker Opinion of Value - 409 S Boyle Ave">
+<meta name="twitter:description" content="32-Unit Multifamily Investment - Los Angeles, CA 90033 | LAAA Team - Marcus & Millichap">
+<meta name="twitter:image" content="https://409sboyle.laaa.com/preview.png">
 <title>BOV - 409 S Boyle Ave, Los Angeles | LAAA Team</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');</style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -524,7 +533,7 @@ p{{margin-bottom:16px;font-size:14px;line-height:1.7;}}
 .summary-page{{margin-top:24px;border:1px solid #dce3eb;border-radius:8px;padding:20px;background:#fff;}}.summary-banner{{text-align:center;background:#1B3A5C;color:#fff;padding:10px 16px;font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;border-radius:4px;margin-bottom:16px;}}.summary-two-col{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}}.summary-table{{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;border:1px solid #dce3eb;}}.summary-table th,.summary-table td{{padding:4px 8px;border-bottom:1px solid #e8ecf0;text-align:left;}}.summary-table td.num{{text-align:right;}}.summary-table th.num{{text-align:right;}}.summary-header{{background:#1B3A5C;color:#fff;padding:5px 8px !important;font-size:10px !important;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;border-bottom:none !important;}}.summary-table tr.summary td{{border-top:2px solid #1B3A5C;font-weight:700;background:#f0f4f8;}}.summary-table tr:nth-child(even){{background:#fafbfc;}}.summary-trade-range{{text-align:center;margin:24px auto;padding:16px 24px;border:2px solid #1B3A5C;border-radius:6px;max-width:480px;}}.summary-trade-label{{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#555;font-weight:600;margin-bottom:6px;}}.summary-trade-prices{{font-size:26px;font-weight:700;color:#1B3A5C;}}
 .page-break-marker{{height:4px;background:repeating-linear-gradient(90deg,#ddd 0,#ddd 8px,transparent 8px,transparent 16px);margin:0;}}
 .footer{{background:#1B3A5C;color:#fff;padding:50px 40px;text-align:center;}}.footer-logo{{width:180px;margin-bottom:30px;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.3));}}.footer-team{{display:flex;justify-content:center;gap:40px;margin-bottom:30px;flex-wrap:wrap;}}.footer-person{{text-align:center;flex:1;min-width:280px;}}.footer-headshot{{width:70px;height:70px;border-radius:50%;border:2px solid #C5A258;margin-bottom:10px;object-fit:cover;}}.footer-name{{font-size:16px;font-weight:600;}}.footer-title{{font-size:12px;color:#C5A258;margin-bottom:8px;}}.footer-contact{{font-size:12px;color:rgba(255,255,255,0.7);line-height:1.8;}}.footer-contact a{{color:rgba(255,255,255,0.7);text-decoration:none;}}.footer-office{{font-size:12px;color:rgba(255,255,255,0.5);margin-top:20px;}}.footer-disclaimer{{font-size:10px;color:rgba(255,255,255,0.35);margin-top:20px;max-width:800px;margin-left:auto;margin-right:auto;line-height:1.6;}}
-@media(max-width:768px){{.cover-content{{padding:30px 20px;}}.cover-title{{font-size:32px;}}.cover-logo{{width:220px;}}.cover-headshots{{gap:24px;}}.cover-headshot{{width:60px;height:60px;}}.pdf-float-btn{{padding:10px 18px;font-size:12px;bottom:16px;right:16px;}}.section{{padding:30px 16px;}}.two-col{{grid-template-columns:1fr;}}.metrics-grid,.metrics-grid-4{{grid-template-columns:repeat(2,1fr);gap:12px;}}.metric-card{{padding:14px 10px;}}.metric-value{{font-size:22px;}}.footer-team{{flex-direction:column;align-items:center;}}.leaflet-map{{height:300px;}}.toc-nav{{padding:0 6px;}}.toc-nav a{{font-size:10px;padding:10px 6px;letter-spacing:0.2px;}}.bio-grid{{grid-template-columns:1fr;gap:16px;}}.bio-headshot{{width:60px;height:60px;}}.mkt-channels,.perf-grid{{grid-template-columns:1fr;}}.os-two-col{{grid-template-columns:1fr;}}.loc-grid{{grid-template-columns:1fr;}}.loc-wide-map{{height:180px;margin-top:16px;}}.inv-split{{grid-template-columns:1fr;}}.inv-photo{{height:240px;}}.buyer-split{{grid-template-columns:1fr;}}.summary-two-col{{grid-template-columns:1fr;}}.prop-grid-4{{grid-template-columns:1fr;}}}}
+@media(max-width:768px){{.cover-content{{padding:30px 20px;}}.cover-title{{font-size:32px;}}.cover-logo{{width:220px;}}.cover-headshots{{gap:24px;}}.cover-headshot{{width:60px;height:60px;}}.pdf-float-btn{{padding:10px 18px;font-size:12px;bottom:16px;right:16px;}}.section{{padding:30px 16px;}}.photo-grid{{grid-template-columns:1fr;}}.two-col{{grid-template-columns:1fr;}}.metrics-grid,.metrics-grid-4{{grid-template-columns:repeat(2,1fr);gap:12px;}}.metric-card{{padding:14px 10px;}}.metric-value{{font-size:22px;}}.footer-team{{flex-direction:column;align-items:center;}}.leaflet-map{{height:300px;}}.embed-map-wrap iframe{{height:320px;}}.toc-nav{{padding:0 6px;}}.toc-nav a{{font-size:10px;padding:10px 6px;letter-spacing:0.2px;}}.table-scroll table{{min-width:560px;}}.bio-grid{{grid-template-columns:1fr;gap:16px;}}.bio-headshot{{width:60px;height:60px;}}.press-strip{{gap:16px;}}.press-logo{{font-size:11px;}}.costar-badge-title{{font-size:18px;}}.img-float-right{{float:none;width:100%;margin:0 0 16px 0;}}.mkt-channels,.perf-grid{{grid-template-columns:1fr;}}.os-two-col{{grid-template-columns:1fr;}}.loc-grid{{grid-template-columns:1fr;}}.loc-wide-map{{height:180px;margin-top:16px;}}.inv-split{{grid-template-columns:1fr;}}.inv-photo{{height:240px;}}.buyer-split{{grid-template-columns:1fr;}}.summary-two-col{{grid-template-columns:1fr;}}.prop-grid-4{{grid-template-columns:1fr;}}}}
 @media(max-width:420px){{.cover-content{{padding:24px 16px;}}.cover-logo{{width:180px;}}.cover-title{{font-size:24px;}}.cover-stats{{gap:10px;}}.cover-stat-value{{font-size:18px;}}.cover-stat-label{{font-size:9px;}}.cover-label{{font-size:11px;}}.cover-headshots{{gap:16px;margin-top:16px;}}.cover-headshot{{width:50px;height:50px;}}.pdf-float-btn{{padding:10px 14px;font-size:0;bottom:14px;right:14px;}}.pdf-float-btn svg{{width:22px;height:22px;}}.metrics-grid,.metrics-grid-4{{grid-template-columns:1fr;}}.metric-card{{padding:12px 10px;}}.metric-value{{font-size:20px;}}.section{{padding:24px 12px;}}.section-title{{font-size:20px;}}.footer{{padding:24px 12px;}}.footer-team{{gap:16px;}}.toc-nav{{padding:0 4px;}}.toc-nav a{{font-size:8px;padding:10px 4px;letter-spacing:0;}}.leaflet-map{{height:240px;}}}}
 @media print{{
 @page{{size:letter landscape;margin:0.4in 0.5in;}}
